@@ -14,11 +14,21 @@ pub trait QueryImageInterface {
     // - all catalogs
     // - list tags for a specific component
     // - get a reference digest (from header) for a specific manifest
-    async fn get_details(&self, url: String, token: String) -> Result<String, MirrorError>;
+    async fn get_details(
+        &self,
+        url: String,
+        token: String,
+        e_tag: bool,
+    ) -> Result<String, MirrorError>;
 }
 #[async_trait]
 impl QueryImageInterface for ImplQueryImageInterface {
-    async fn get_details(&self, url: String, token: String) -> Result<String, MirrorError> {
+    async fn get_details(
+        &self,
+        url: String,
+        token: String,
+        e_tag: bool,
+    ) -> Result<String, MirrorError> {
         let client = Client::new();
         let mut header_map: HeaderMap = HeaderMap::new();
         header_map.insert(USER_AGENT, HeaderValue::from_static("image-mirror"));
@@ -35,16 +45,23 @@ impl QueryImageInterface for ImplQueryImageInterface {
         if token.len() == 0 {
             let put_url = url.replace("https", "http");
             let res = client.get(put_url).headers(header_map.clone()).send().await;
+
             if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
-                let body = res.unwrap().text().await;
-                if body.is_ok() {
-                    Ok(body.unwrap())
+                if e_tag {
+                    let headers = res.as_ref().unwrap().headers();
+                    let e_tag = headers.get("Etag").unwrap();
+                    Ok(e_tag.to_str().unwrap().to_string())
                 } else {
-                    let err = MirrorError::new(&format!(
-                        "[get_details] could not read body contents {}",
-                        body.err().unwrap().to_string().to_lowercase()
-                    ));
-                    Err(err)
+                    let body = res.unwrap().text().await;
+                    if body.is_ok() {
+                        Ok(body.unwrap())
+                    } else {
+                        let err = MirrorError::new(&format!(
+                            "[get_details] could not read body contents {}",
+                            body.err().unwrap().to_string().to_lowercase()
+                        ));
+                        Err(err)
+                    }
                 }
             } else {
                 let err =
@@ -54,15 +71,21 @@ impl QueryImageInterface for ImplQueryImageInterface {
         } else {
             let res = client.get(url).headers(header_map.clone()).send().await;
             if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
-                let body = res.unwrap().text().await;
-                if body.is_ok() {
-                    Ok(body.unwrap())
+                if e_tag {
+                    let headers = res.as_ref().unwrap().headers();
+                    let e_tag = headers.get("Etag").unwrap();
+                    Ok(e_tag.to_str().unwrap().to_string())
                 } else {
-                    let err = MirrorError::new(&format!(
-                        "[get_details] could not read body contents {}",
-                        body.err().unwrap().to_string().to_lowercase()
-                    ));
-                    Err(err)
+                    let body = res.unwrap().text().await;
+                    if body.is_ok() {
+                        Ok(body.unwrap())
+                    } else {
+                        let err = MirrorError::new(&format!(
+                            "[get_details] could not read body contents {}",
+                            body.err().unwrap().to_string().to_lowercase()
+                        ));
+                        Err(err)
+                    }
                 }
             } else {
                 let err =
@@ -99,7 +122,8 @@ mod tests {
 
         let fake = ImplQueryImageInterface {};
 
-        let res = aw!(fake.get_details(url.clone() + "/v2/manifests", String::from("token")));
+        let res =
+            aw!(fake.get_details(url.clone() + "/v2/manifests", String::from("token"), false));
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), String::from("{ \"test\": \"hello-world\" }"));
     }
@@ -118,7 +142,7 @@ mod tests {
 
         let fake = ImplQueryImageInterface {};
 
-        let res = aw!(fake.get_details(url.clone() + "/v2/manifests", String::from("")));
+        let res = aw!(fake.get_details(url.clone() + "/v2/manifests", String::from(""), false));
         assert!(res.is_err());
     }
 }
