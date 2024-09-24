@@ -73,7 +73,7 @@ impl QueryImageInterface for ImplQueryImageInterface {
             if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
                 if e_tag {
                     let headers = res.as_ref().unwrap().headers();
-                    let e_tag = headers.get("Etag").unwrap();
+                    let e_tag = headers.get("docker-content-digest").unwrap();
                     Ok(e_tag.to_str().unwrap().to_string())
                 } else {
                     let body = res.unwrap().text().await;
