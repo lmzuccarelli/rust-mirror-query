@@ -31,6 +31,7 @@ impl QueryImageInterface for ImplQueryImageInterface {
     ) -> Result<String, MirrorError> {
         let client = Client::new();
         let mut header_map: HeaderMap = HeaderMap::new();
+        let mut get_url: String;
         header_map.insert(USER_AGENT, HeaderValue::from_static("image-mirror"));
         header_map.insert(
             AUTHORIZATION,
@@ -41,57 +42,47 @@ impl QueryImageInterface for ImplQueryImageInterface {
             HeaderValue::from_static("application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json"),
         );
         header_map.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        get_url = url.clone();
         // check without token
         if token.len() == 0 {
-            let put_url = url.replace("https", "http");
-            let res = client.get(put_url).headers(header_map.clone()).send().await;
-
-            if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
-                if e_tag {
-                    let headers = res.as_ref().unwrap().headers();
-                    let e_tag = headers.get("Etag").unwrap();
-                    Ok(e_tag.to_str().unwrap().to_string())
-                } else {
-                    let body = res.unwrap().text().await;
-                    if body.is_ok() {
-                        Ok(body.unwrap())
-                    } else {
-                        let err = MirrorError::new(&format!(
-                            "[get_details] could not read body contents {}",
-                            body.err().unwrap().to_string().to_lowercase()
-                        ));
-                        Err(err)
-                    }
-                }
+            get_url = url.replace("https", "http");
+        }
+        let res = client.get(get_url).headers(header_map.clone()).send().await;
+        if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
+            if e_tag {
+                let headers = res.as_ref().unwrap().headers();
+                let e_tag = headers.get("docker-content-digest").unwrap();
+                Ok(e_tag.to_str().unwrap().to_string())
             } else {
-                let err =
-                    MirrorError::new(&format!("[get_details] {}", res.as_ref().unwrap().status()));
-                Err(err)
+                let headers = res.as_ref().unwrap().headers();
+                let link = headers.get("link");
+                if link.is_some() {
+                    println!(
+                        "--query-params={:?}",
+                        link.unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string()
+                            .replace("<", "")
+                            .replace(">", "")
+                            .replace("; rel=\"next\"", "")
+                    );
+                }
+                let body = res.unwrap().text().await;
+                if body.is_ok() {
+                    Ok(body.unwrap())
+                } else {
+                    let err = MirrorError::new(&format!(
+                        "[get_details] could not read body contents {}",
+                        body.err().unwrap().to_string().to_lowercase()
+                    ));
+                    Err(err)
+                }
             }
         } else {
-            let res = client.get(url).headers(header_map.clone()).send().await;
-            if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
-                if e_tag {
-                    let headers = res.as_ref().unwrap().headers();
-                    let e_tag = headers.get("docker-content-digest").unwrap();
-                    Ok(e_tag.to_str().unwrap().to_string())
-                } else {
-                    let body = res.unwrap().text().await;
-                    if body.is_ok() {
-                        Ok(body.unwrap())
-                    } else {
-                        let err = MirrorError::new(&format!(
-                            "[get_details] could not read body contents {}",
-                            body.err().unwrap().to_string().to_lowercase()
-                        ));
-                        Err(err)
-                    }
-                }
-            } else {
-                let err =
-                    MirrorError::new(&format!("[get_details] {}", res.as_ref().unwrap().status()));
-                Err(err)
-            }
+            let err =
+                MirrorError::new(&format!("[get_details] {}", res.as_ref().unwrap().status()));
+            Err(err)
         }
     }
 }
