@@ -603,7 +603,7 @@ source = "git+https://github.com/lmzuccarelli/rust-mirror-error?branch=main#210a
 
 [[package]]
 name = "mirror-query"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "custom-logger",

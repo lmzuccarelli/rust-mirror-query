@@ -7,6 +7,12 @@ use reqwest::{Client, StatusCode};
 #[derive(Debug, Clone)]
 pub struct ImplQueryImageInterface {}
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResponseData {
+    pub data: String,
+    pub link: String,
+}
+
 #[async_trait]
 pub trait QueryImageInterface {
     // used to interact with container registry
@@ -19,7 +25,7 @@ pub trait QueryImageInterface {
         url: String,
         token: String,
         e_tag: bool,
-    ) -> Result<String, MirrorError>;
+    ) -> Result<ResponseData, MirrorError>;
 }
 #[async_trait]
 impl QueryImageInterface for ImplQueryImageInterface {
@@ -28,7 +34,7 @@ impl QueryImageInterface for ImplQueryImageInterface {
         url: String,
         token: String,
         e_tag: bool,
-    ) -> Result<String, MirrorError> {
+    ) -> Result<ResponseData, MirrorError> {
         let client = Client::new();
         let mut header_map: HeaderMap = HeaderMap::new();
         let mut get_url: String;
@@ -52,25 +58,33 @@ impl QueryImageInterface for ImplQueryImageInterface {
             if e_tag {
                 let headers = res.as_ref().unwrap().headers();
                 let e_tag = headers.get("docker-content-digest").unwrap();
-                Ok(e_tag.to_str().unwrap().to_string())
+                let rd = ResponseData {
+                    data: e_tag.to_str().unwrap().to_string(),
+                    link: "".to_string(),
+                };
+                Ok(rd.clone())
             } else {
                 let headers = res.as_ref().unwrap().headers();
                 let link = headers.get("link");
-                if link.is_some() {
-                    println!(
-                        "--query-params={:?}",
-                        link.unwrap()
-                            .to_str()
+                let link_info = match link {
+                    Some(l) => format!(
+                        "{}",
+                        l.to_str()
                             .unwrap()
                             .to_string()
                             .replace("<", "")
                             .replace(">", "")
-                            .replace("; rel=\"next\"", "")
-                    );
-                }
+                            .replace("; rel=\"next\"", ""),
+                    ),
+                    None => "".to_string(),
+                };
                 let body = res.unwrap().text().await;
                 if body.is_ok() {
-                    Ok(body.unwrap())
+                    let rd = ResponseData {
+                        data: body.unwrap(),
+                        link: link_info,
+                    };
+                    Ok(rd.clone())
                 } else {
                     let err = MirrorError::new(&format!(
                         "[get_details] could not read body contents {}",
@@ -116,7 +130,10 @@ mod tests {
         let res =
             aw!(fake.get_details(url.clone() + "/v2/manifests", String::from("token"), false));
         assert!(res.is_ok());
-        assert_eq!(res.unwrap(), String::from("{ \"test\": \"hello-world\" }"));
+        assert_eq!(
+            res.unwrap().data,
+            String::from("{ \"test\": \"hello-world\" }")
+        );
     }
     #[test]
     fn get_manifest_fail() {
