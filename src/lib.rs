@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-// use custom_logger::*;
 use mirror_error::MirrorError;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
 use reqwest::{Client, StatusCode};
