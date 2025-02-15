@@ -36,69 +36,63 @@ impl QueryImageInterface for ImplQueryImageInterface {
     ) -> Result<ResponseData, MirrorError> {
         let client = Client::new();
         let mut header_map: HeaderMap = HeaderMap::new();
-        let mut get_url: String;
         header_map.insert(USER_AGENT, HeaderValue::from_static("image-mirror"));
         header_map.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("{} {}", "Bearer", token)).unwrap(),
+            HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
         );
         header_map.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json"),
         );
         header_map.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        get_url = url.clone();
-        // check without token
-        if token.len() == 0 {
-            get_url = url.replace("https", "http");
-        }
-        let res = client.get(get_url).headers(header_map.clone()).send().await;
-        if res.is_ok() && res.as_ref().unwrap().status() == StatusCode::OK {
+        let get_url = if token.is_empty() {
+            // check without token
+            url.replace("https", "http")
+        } else {
+            url
+        };
+        let res = client
+            .get(get_url)
+            .headers(header_map)
+            .send()
+            .await
+            .map_err(|e| MirrorError::new(&format!("[get_details] {e}")))?;
+        if res.status() == StatusCode::OK {
+            let headers = res.headers();
             if e_tag {
-                let headers = res.as_ref().unwrap().headers();
                 let e_tag = headers.get("docker-content-digest").unwrap();
-                let rd = ResponseData {
+                Ok(ResponseData {
                     data: e_tag.to_str().unwrap().to_string(),
                     link: "".to_string(),
-                };
-                Ok(rd.clone())
+                })
             } else {
-                let headers = res.as_ref().unwrap().headers();
-                let link = headers.get("link");
-                let link_info = match link {
-                    Some(l) => format!(
-                        "{}",
+                let link_info = headers
+                    .get("link")
+                    .map(|l| {
                         l.to_str()
                             .unwrap()
-                            .to_string()
-                            .replace("<", "")
-                            .replace(">", "")
-                            .replace("; rel=\"next\"", ""),
-                    ),
-                    None => "".to_string(),
-                };
-                let body = res.unwrap().text().await;
-                if body.is_ok() {
-                    let rd = ResponseData {
-                        data: body.unwrap(),
-                        link: link_info,
-                    };
-                    Ok(rd.clone())
-                } else {
-                    let err = MirrorError::new(&format!(
+                            .replace(['<', '>'], "")
+                            .replace("; rel=\"next\"", "")
+                    })
+                    .unwrap_or_default();
+                let body = res.text().await.map_err(|e| {
+                    MirrorError::new(&format!(
                         "[get_details] could not read body contents {}",
-                        body.err().unwrap().to_string().to_lowercase()
-                    ));
-                    Err(err)
-                }
+                        e.to_string().to_lowercase()
+                    ))
+                })?;
+                Ok(ResponseData {
+                    data: body,
+                    link: link_info,
+                })
             }
         } else {
-            let err =
-                MirrorError::new(&format!("[get_details] {}", res.as_ref().unwrap().status()));
-            Err(err)
+            Err(MirrorError::new(&format!("[get_details] {}", res.status())))
         }
     }
 }
+
 #[cfg(test)]
 #[allow(unused_must_use)]
 mod tests {
@@ -126,8 +120,7 @@ mod tests {
 
         let fake = ImplQueryImageInterface {};
 
-        let res =
-            aw!(fake.get_details(url.clone() + "/v2/manifests", String::from("token"), false));
+        let res = aw!(fake.get_details(url + "/v2/manifests", String::from("token"), false));
         assert!(res.is_ok());
         assert_eq!(
             res.unwrap().data,
@@ -149,7 +142,7 @@ mod tests {
 
         let fake = ImplQueryImageInterface {};
 
-        let res = aw!(fake.get_details(url.clone() + "/v2/manifests", String::from(""), false));
+        let res = aw!(fake.get_details(url + "/v2/manifests", String::from(""), false));
         assert!(res.is_err());
     }
 }
